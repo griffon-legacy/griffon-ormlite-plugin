@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2011-2013 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,93 +16,79 @@
 
 package griffon.plugins.ormlite
 
-import com.j256.ormlite.jdbc.JdbcConnectionSource
+import com.j256.ormlite.support.ConnectionSource
 
 import griffon.core.GriffonApplication
 import griffon.util.ApplicationHolder
-import griffon.util.CallableWithArgs
 import static griffon.util.GriffonNameUtils.isBlank
-
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 
 /**
  * @author Andres Almiray
  */
-@Singleton
-class ConnectionSourceHolder implements OrmliteProvider {
-    private static final Logger LOG = LoggerFactory.getLogger(ConnectionSourceHolder)
+class ConnectionSourceHolder {
+    private static final String DEFAULT = 'default'
     private static final Object[] LOCK = new Object[0]
-    private final Map<String, JdbcConnectionSource> connections = [:]
+    private final Map<String, ConnectionSource> connections = [:]
 
-    String[] getConnectionNames() {
+    private static final ConnectionSourceHolder INSTANCE
+
+    static {
+        INSTANCE = new ConnectionSourceHolder()
+    }
+
+    static ConnectionSourceHolder getInstance() {
+        INSTANCE
+    }
+
+    private ConnectionSourceHolder() {}
+
+    String[] getConnectionSourceNames() {
         List<String> databaseNames = new ArrayList().addAll(connections.keySet())
         databaseNames.toArray(new String[databaseNames.size()])
     }
 
-    JdbcConnectionSource getConnection(String databaseName = 'default') {
-        if(isBlank(databaseName)) databaseName = 'default'
-        retrieveConnection(databaseName)
+    ConnectionSource getConnectionSource(String databaseName = DEFAULT) {
+        if (isBlank(databaseName)) databaseName = DEFAULT
+        retrieveConnectionSource(databaseName)
     }
 
-    void setConnection(String databaseName = 'default', JdbcConnectionSource connection) {
-        if(isBlank(databaseName)) databaseName = 'default'
-        storeConnection(databaseName, connection)
+    void setConnectionSource(String databaseName = DEFAULT, ConnectionSource connection) {
+        if (isBlank(databaseName)) databaseName = DEFAULT
+        storeConnectionSource(databaseName, connection)
     }
 
-    Object withOrmlite(String databaseName = 'default', Closure closure) {
-        JdbcConnectionSource connection = fetchConnection(databaseName)
-        if(LOG.debugEnabled) LOG.debug("Executing statement on connection '$databaseName'")
-        try {
-            return closure(databaseName, connection)
-        } finally {
-            connection.close()
-        }
-    }
-
-    public <T> T withOrmlite(String databaseName = 'default', CallableWithArgs<T> callable) {
-        JdbcConnectionSource connection = fetchConnection(databaseName)
-        if(LOG.debugEnabled) LOG.debug("Executing statement on connection '$databaseName'")
-        callable.args = [databaseName, connection] as Object[]
-        try {
-            return callable.call()
-        } finally {
-            connection.close()
-        }
+    boolean isConnectionSourceConnected(String databaseName) {
+        if (isBlank(databaseName)) databaseName = DEFAULT
+        retrieveConnectionSource(databaseName) != null
     }
     
-    boolean isConnectionConnected(String databaseName) {
-        if(isBlank(databaseName)) databaseName = 'default'
-        retrieveConnection(databaseName) != null
-    }
-    
-    void disconnectConnection(String databaseName) {
-        if(isBlank(databaseName)) databaseName = 'default'
-        storeConnection(databaseName, null)
+    void disconnectConnectionSource(String databaseName) {
+        if (isBlank(databaseName)) databaseName = DEFAULT
+        storeConnectionSource(databaseName, null)
     }
 
-    private JdbcConnectionSource fetchConnection(String databaseName) {
-        if(isBlank(databaseName)) databaseName = 'default'
-        JdbcConnectionSource connection = retrieveConnection(databaseName)
-        if(connection == null) {
+    ConnectionSource fetchConnectionSource(String databaseName) {
+        if (isBlank(databaseName)) databaseName = DEFAULT
+        ConnectionSource connection = retrieveConnectionSource(databaseName)
+        if (connection == null) {
             GriffonApplication app = ApplicationHolder.application
             ConfigObject config = OrmliteConnector.instance.createConfig(app)
             connection = OrmliteConnector.instance.connect(app, config, databaseName)
         }
 
-        if(connection == null) {
+        if (connection == null) {
             throw new IllegalArgumentException("No such ormlite connection configuration for name $databaseName")
         }
         connection
     }
 
-    private JdbcConnectionSource retrieveConnection(String databaseName) {
+    private ConnectionSource retrieveConnectionSource(String databaseName) {
         synchronized(LOCK) {
             connections[databaseName]
         }
     }
 
-    private void storeConnection(String databaseName, JdbcConnectionSource connection) {
+    private void storeConnectionSource(String databaseName, ConnectionSource connection) {
         synchronized(LOCK) {
             connections[databaseName] = connection
         }

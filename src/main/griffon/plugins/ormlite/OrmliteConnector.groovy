@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2011-2013 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,86 +13,101 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package griffon.plugins.ormlite
-
-import com.j256.ormlite.jdbc.JdbcConnectionSource
 
 import griffon.core.GriffonApplication
 import griffon.util.Environment
 import griffon.util.Metadata
-import griffon.util.CallableWithArgs
 import griffon.util.ConfigUtils
 
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import com.j256.ormlite.support.ConnectionSource
+import com.j256.ormlite.jdbc.JdbcPooledConnectionSource
+
 /**
  * @author Andres Almiray
  */
 @Singleton
-final class OrmliteConnector implements OrmliteProvider {
+final class OrmliteConnector {
+    private static final String DEFAULT = 'default'
+    private static final Logger LOG = LoggerFactory.getLogger(OrmliteConnector)
     private bootstrap
 
-    private static final Logger LOG = LoggerFactory.getLogger(OrmliteConnector)
-
-    Object withOrmlite(String databaseName = 'default', Closure closure) {
-        ConnectionSourceHolder.instance.withOrmlite(databaseName, closure)
-    }
-
-    public <T> T withOrmlite(String databaseName = 'default', CallableWithArgs<T> callable) {
-        return ConnectionSourceHolder.instance.withOrmlite(databaseName, callable)
-    }
-
-    // ======================================================
-
     ConfigObject createConfig(GriffonApplication app) {
-        ConfigUtils.loadConfigWithI18n('OrmliteConfig')
+        if (!app.config.pluginConfig.ormlite) {
+            app.config.pluginConfig.ormlite = ConfigUtils.loadConfigWithI18n('OrmliteConfig')
+        }
+        app.config.pluginConfig.ormlite
     }
 
     private ConfigObject narrowConfig(ConfigObject config, String databaseName) {
-        return databaseName == 'default' ? config.database : config.databases[databaseName]
+        if (config.containsKey('database') && databaseName == DEFAULT) {
+            return config.database
+        } else if (config.containsKey('databases')) {
+            return config.databases[databaseName]
+        }
+        return config
     }
 
-    JdbcConnectionSource connect(GriffonApplication app, ConfigObject config, String databaseName = 'default') {
-        if (ConnectionSourceHolder.instance.isConnectionConnected(databaseName)) {
-            return ConnectionSourceHolder.instance.getConnection(databaseName)
+    ConnectionSource connect(GriffonApplication app, ConfigObject config, String databaseName = DEFAULT) {
+        if (ConnectionSourceHolder.instance.isConnectionSourceConnected(databaseName)) {
+            return ConnectionSourceHolder.instance.getConnectionSource(databaseName)
         }
 
         config = narrowConfig(config, databaseName)
         app.event('OrmliteConnectStart', [config, databaseName])
-        JdbcConnectionSource connection = startOrmlite(config)
-        ConnectionSourceHolder.instance.setConnection(databaseName, connection)
+        ConnectionSource connection = startOrmlite(config)
+        ConnectionSourceHolder.instance.setConnectionSource(databaseName, connection)
         bootstrap = app.class.classLoader.loadClass('BootstrapOrmlite').newInstance()
         bootstrap.metaClass.app = app
-        bootstrap.init(databaseName, connection)
+        resolveOrmliteProvider(app).withOrmlite { dn, c -> bootstrap.init(dn, c) }
         app.event('OrmliteConnectEnd', [databaseName, connection])
         connection
     }
 
-    void disconnect(GriffonApplication app, ConfigObject config, String databaseName = 'default') {
-        if (ConnectionSourceHolder.instance.isConnectionConnected(databaseName)) {
+    void disconnect(GriffonApplication app, ConfigObject config, String databaseName = DEFAULT) {
+        if (ConnectionSourceHolder.instance.isConnectionSourceConnected(databaseName)) {
             config = narrowConfig(config, databaseName)
-            JdbcConnectionSource connection = ConnectionSourceHolder.instance.getConnection(databaseName)
+            ConnectionSource connection = ConnectionSourceHolder.instance.getConnectionSource(databaseName)
             app.event('OrmliteDisconnectStart', [config, databaseName, connection])
-            bootstrap.destroy(databaseName, connection)
+            resolveOrmliteProvider(app).withOrmlite { dn, c -> bootstrap.destroy(dn, c) }
             stopOrmlite(config, connection)
             app.event('OrmliteDisconnectEnd', [config, databaseName])
-            ConnectionSourceHolder.instance.disconnectConnection(databaseName)
+            ConnectionSourceHolder.instance.disconnectConnectionSource(databaseName)
         }
     }
 
-    private JdbcConnectionSource startOrmlite(ConfigObject config) {
+    OrmliteProvider resolveOrmliteProvider(GriffonApplication app) {
+        def ormliteProvider = app.config.ormliteProvider
+        if (ormliteProvider instanceof Class) {
+            ormliteProvider = ormliteProvider.newInstance()
+            app.config.ormliteProvider = ormliteProvider
+        } else if (!ormliteProvider) {
+            ormliteProvider = DefaultOrmliteProvider.instance
+            app.config.ormliteProvider = ormliteProvider
+        }
+        ormliteProvider
+    }
+
+    private ConnectionSource startOrmlite(ConfigObject config) {
         String url      = config.url.toString()
         String username = config.username.toString()
         String password = config.password.toString()
 
-        JdbcConnectionSource connection = new JdbcConnectionSource(url, username, password)
+        ConnectionSource connection = new JdbcPooledConnectionSource(url, username, password)
+
+        for (entry in config) {
+            if (entry.key in ['class', 'metaClass', 'url', 'username', 'password']) continue
+            connection[entry.key] = entry.value
+        }
+
         connection.initialize()
         connection
     }
 
-    private void stopOrmlite(ConfigObject config, JdbcConnectionSource connection) {
+    private void stopOrmlite(ConfigObject config, ConnectionSource connection) {
         if (connection.isOpen()) connection.close()
     }
 }

@@ -22,7 +22,11 @@ import groovy.lang.Closure;
 /**
  * @author Andres Almiray
  */
-public interface OrmliteProvider {
+public interface OrmliteContributionHandler {
+    void setOrmliteProvider(OrmliteProvider provider);
+
+    OrmliteProvider getOrmliteProvider();
+
     <R> R withOrmlite(Closure<R> closure);
 
     <R> R withOrmlite(String databaseName, Closure<R> closure);

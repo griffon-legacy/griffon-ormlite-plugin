@@ -16,18 +16,26 @@
 
 package griffon.plugins.ormlite;
 
-import griffon.util.CallableWithArgs;
-import groovy.lang.Closure;
+import com.j256.ormlite.support.ConnectionSource;
 
 /**
  * @author Andres Almiray
  */
-public interface OrmliteProvider {
-    <R> R withOrmlite(Closure<R> closure);
+public class DefaultOrmliteProvider extends AbstractOrmliteProvider {
+    private static final DefaultOrmliteProvider INSTANCE;
 
-    <R> R withOrmlite(String databaseName, Closure<R> closure);
+    static {
+        INSTANCE = new DefaultOrmliteProvider();
+    }
 
-    <R> R withOrmlite(CallableWithArgs<R> callable);
+    public static DefaultOrmliteProvider getInstance() {
+        return INSTANCE;
+    }
 
-    <R> R withOrmlite(String databaseName, CallableWithArgs<R> callable);
+    private DefaultOrmliteProvider() {}
+
+    @Override
+    protected ConnectionSource getConnectionSource(String databaseName) {
+        return ConnectionSourceHolder.getInstance().fetchConnectionSource(databaseName);
+    }
 }

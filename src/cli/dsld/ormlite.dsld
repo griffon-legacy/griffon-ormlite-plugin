@@ -14,20 +14,13 @@
  * limitations under the License.
  */
 
-package griffon.plugins.ormlite;
-
-import griffon.util.CallableWithArgs;
-import groovy.lang.Closure;
+package dsld
 
 /**
  * @author Andres Almiray
  */
-public interface OrmliteProvider {
-    <R> R withOrmlite(Closure<R> closure);
 
-    <R> R withOrmlite(String databaseName, Closure<R> closure);
-
-    <R> R withOrmlite(CallableWithArgs<R> callable);
-
-    <R> R withOrmlite(String databaseName, CallableWithArgs<R> callable);
+contribute(enclosingClass(annotatedBy('griffon.plugins.ormlite.OrmliteAware'))) {
+    provider = "Ormlite DSL"
+    delegatesTo "griffon.plugins.ormlite.OrmliteContributionHandler"
 }
